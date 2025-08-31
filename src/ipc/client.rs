@@ -467,6 +467,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                         };
                         println!("Config loaded {status}");
                     }
+                    Event::OutputsChanged { outputs } => {
+                        println!("Outputs changed: {:?}", outputs.keys().collect::<Vec<_>>());
+                    }
                 }
             }
         }

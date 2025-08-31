@@ -1804,9 +1804,14 @@ impl State {
         #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
 
+        // Notify wayland output-management clients.
         let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
-        self.niri.output_management_state.notify_changes(new_config);
+        self.niri.output_management_state.notify_changes(new_config.clone());
+
+        // Emit IPC OutputsChanged event and update event stream state via State helper.
+        self.ipc_outputs_changed_event(new_config);
     }
+
 
     pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {

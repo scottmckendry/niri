@@ -47,7 +47,7 @@ pub struct IpcServer {
     /// This is `None` when creating `IpcServer` without a socket.
     pub socket_path: Option<PathBuf>,
     event_streams: Rc<RefCell<Vec<EventStreamSender>>>,
-    event_stream_state: Rc<RefCell<EventStreamState>>,
+    pub(crate) event_stream_state: Rc<RefCell<EventStreamState>>,
 }
 
 struct ClientCtx {
@@ -112,7 +112,7 @@ impl IpcServer {
         })
     }
 
-    fn send_event(&self, event: Event) {
+    pub(crate) fn send_event(&self, event: Event) {
         let mut streams = self.event_streams.borrow_mut();
         let mut to_remove = Vec::new();
         for (idx, stream) in streams.iter_mut().enumerate() {
@@ -771,6 +771,24 @@ impl State {
 
         let event = Event::ConfigLoaded { failed };
         state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_outputs_changed_event(
+        &mut self,
+        new_config: crate::backend::IpcOutputMap,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+        let event = Event::OutputsChanged {
+            outputs: new_config
+                .values()
+                .map(|v| (v.name.clone(), v.clone()))
+                .collect(),
+        };
+        state.outputs.apply(event.clone());
         server.send_event(event);
     }
 }

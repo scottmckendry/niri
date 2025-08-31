@@ -1437,6 +1437,11 @@ pub enum Event {
         /// The new state of the overview.
         is_open: bool,
     },
+    /// Connected outputs changed.
+    OutputsChanged {
+        /// The new outputs map keyed by output name.
+        outputs: HashMap<String, Output>,
+    },
     /// The configuration was reloaded.
     ///
     /// You will always receive this event when connecting to the event stream, indicating the last

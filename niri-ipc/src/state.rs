@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Event, KeyboardLayouts, Window, Workspace};
+use crate::{Event, KeyboardLayouts, Output, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -35,8 +35,11 @@ pub struct EventStreamState {
     /// State of workspaces.
     pub workspaces: WorkspacesState,
 
-    /// State of workspaces.
+    /// State of windows.
     pub windows: WindowsState,
+
+    /// State of outputs.
+    pub outputs: OutputsState,
 
     /// State of the keyboard layouts.
     pub keyboard_layouts: KeyboardLayoutsState,
@@ -60,6 +63,13 @@ pub struct WorkspacesState {
 pub struct WindowsState {
     /// Map from a window id to the window.
     pub windows: HashMap<u64, Window>,
+}
+
+/// The outputs state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct OutputsState {
+    /// Map from output name to the output info.
+    pub outputs: HashMap<String, Output>,
 }
 
 /// The keyboard layout state communicated over the event stream.
@@ -88,6 +98,7 @@ impl EventStreamStatePart for EventStreamState {
         let mut events = Vec::new();
         events.extend(self.workspaces.replicate());
         events.extend(self.windows.replicate());
+        events.extend(self.outputs.replicate());
         events.extend(self.keyboard_layouts.replicate());
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
@@ -97,6 +108,7 @@ impl EventStreamStatePart for EventStreamState {
     fn apply(&mut self, event: Event) -> Option<Event> {
         let event = self.workspaces.apply(event)?;
         let event = self.windows.apply(event)?;
+        let event = self.outputs.apply(event)?;
         let event = self.keyboard_layouts.apply(event)?;
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
@@ -207,6 +219,28 @@ impl EventStreamStatePart for WindowsState {
                     let win = win.expect("changed window was missing from the map");
                     win.layout = update;
                 }
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for OutputsState {
+    fn replicate(&self) -> Vec<Event> {
+        if self.outputs.is_empty() {
+            vec![]
+        } else {
+            vec![Event::OutputsChanged {
+                outputs: self.outputs.clone(),
+            }]
+        }
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::OutputsChanged { outputs } => {
+                self.outputs = outputs;
             }
             event => return Some(event),
         }
