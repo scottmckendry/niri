@@ -146,7 +146,6 @@ where
         let config = ctx.get::<Rc<RefCell<Config>>>().unwrap().clone();
         let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
         let include_errors = ctx.get::<Rc<RefCell<IncludeErrors>>>().unwrap().clone();
-        let recursion = ctx.get::<Recursion>().unwrap().0;
         let saw_mru_binds = ctx.get::<SawMruBinds>().unwrap().0.clone();
 
         let mut seen = HashSet::new();
@@ -266,11 +265,9 @@ where
                     //
                     // So, let's just work around the problem here, preserving the original
                     // behavior.
-                    if recursion == 0 {
-                        if let Some(border) = part.border.as_mut() {
-                            if !border.on && !border.off {
-                                border.on = true;
-                            }
+                    if let Some(border) = part.border.as_mut() {
+                        if !border.on && !border.off {
+                            border.on = true;
                         }
                     }
 
