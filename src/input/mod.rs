@@ -2857,7 +2857,11 @@ impl State {
                             location,
                         };
                         let start_data = PointerOrTouchStartData::Pointer(start_data);
-                        if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), false) {
+                        let enable_drag_scroll =
+                            mod_down && self.niri.config.borrow().input.mouse.super_drag_scroll;
+                        if let Some(grab) =
+                            MoveGrab::new(self, start_data, window.clone(), enable_drag_scroll)
+                        {
                             pointer.set_grab(self, grab, serial, Focus::Clear);
                         }
                     }

@@ -245,6 +245,8 @@ pub struct Mouse {
     pub middle_emulation: bool,
     #[knuffel(child)]
     pub scroll_factor: Option<ScrollFactor>,
+    #[knuffel(child)]
+    pub super_drag_scroll: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
