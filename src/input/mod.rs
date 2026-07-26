@@ -9,6 +9,7 @@ use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
+use smithay::backend::input::TabletToolDescriptor;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -26,6 +27,12 @@ use smithay::input::pointer::{
     GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
     GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, RelativeMotionEvent,
 };
+use smithay::input::tablet::tool::{
+    AxisFrame as TabletAxisFrame, ButtonEvent as TabletButtonEvent, DownEvent as TabletDownEvent,
+    MotionEvent as TabletMotionEvent, ProximityInEvent, ProximityOutEvent,
+    UpEvent as TabletUpEvent,
+};
+use smithay::input::tablet::{TabletDescriptor, TabletSeatTrait};
 use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
 };
@@ -36,7 +43,6 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
-use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
@@ -245,7 +251,7 @@ impl State {
             let tablet_seat = self.niri.seat.tablet_seat();
 
             let desc = TabletDescriptor::from(&device);
-            tablet_seat.add_tablet::<Self>(&self.niri.display_handle, &desc);
+            tablet_seat.add_tablet(&desc);
         }
         if device.has_capability(DeviceCapability::Touch) && self.niri.seat.get_touch().is_none() {
             self.niri.seat.add_touch();
@@ -3588,34 +3594,41 @@ impl State {
         let under = self.niri.contents_under(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
-        let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
         let tool = tablet_seat.get_tool(&event.tool());
-        if let (Some(tablet), Some(tool)) = (tablet, tool) {
+        if let Some(tool) = tool {
+            let mut axis_frame = TabletAxisFrame::new();
             if event.pressure_has_changed() {
-                tool.pressure(event.pressure());
+                axis_frame = axis_frame.pressure(event.pressure());
             }
             if event.distance_has_changed() {
-                tool.distance(event.distance());
+                axis_frame = axis_frame.distance(event.distance());
             }
             if event.tilt_has_changed() {
-                tool.tilt(event.tilt());
+                let (tilt_x, tilt_y) = event.tilt();
+                axis_frame = axis_frame.tilt(tilt_x, tilt_y);
             }
             if event.slider_has_changed() {
-                tool.slider_position(event.slider_position());
+                axis_frame = axis_frame.slider(event.slider_position());
             }
             if event.rotation_has_changed() {
-                tool.rotation(event.rotation());
+                axis_frame = axis_frame.rotation(event.rotation());
             }
             if event.wheel_has_changed() {
-                tool.wheel(event.wheel_delta(), event.wheel_delta_discrete());
+                axis_frame = axis_frame.wheel(event.wheel_delta(), event.wheel_delta_discrete());
             }
 
+            tool.axis(self, axis_frame);
+            tool.frame(self, event.time_msec());
+
+            let serial = SERIAL_COUNTER.next_serial();
             tool.motion(
-                pos,
+                self,
                 under.surface,
-                &tablet,
-                SERIAL_COUNTER.next_serial(),
-                event.time_msec(),
+                &TabletMotionEvent {
+                    location: pos,
+                    serial,
+                    time: event.time_msec(),
+                },
             );
 
             self.niri.pointer_visibility = PointerVisibility::Visible;
@@ -3640,7 +3653,13 @@ impl State {
         match tip_state {
             TabletToolTipState::Down => {
                 let serial = SERIAL_COUNTER.next_serial();
-                tool.tip_down(serial, event.time_msec());
+                tool.down(
+                    self,
+                    &TabletDownEvent {
+                        serial,
+                        time: event.time_msec(),
+                    },
+                );
 
                 if let Some(pos) = self.niri.tablet_cursor_location {
                     let under = self.niri.contents_under(pos);
@@ -3730,7 +3749,13 @@ impl State {
                     }
                 }
 
-                tool.tip_up(event.time_msec());
+                tool.up(
+                    self,
+                    &TabletUpEvent {
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time: event.time_msec(),
+                    },
+                );
             }
         }
     }
@@ -3746,26 +3771,35 @@ impl State {
         let under = self.niri.contents_under(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
-        let display_handle = self.niri.display_handle.clone();
-        let tool = tablet_seat.add_tool::<Self>(self, &display_handle, &event.tool());
+        let tool = tablet_seat.add_tool(&event.tool());
         let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&event.device()));
         if let Some(tablet) = tablet {
             match event.state() {
                 ProximityState::In => {
                     if let Some(under) = under.surface {
                         tool.proximity_in(
-                            pos,
-                            under,
-                            &tablet,
-                            SERIAL_COUNTER.next_serial(),
-                            event.time_msec(),
+                            self,
+                            Some(under),
+                            tablet,
+                            &ProximityInEvent {
+                                location: pos,
+                                axis: None,
+                                serial: SERIAL_COUNTER.next_serial(),
+                                time: event.time_msec(),
+                            },
                         );
                     }
                     self.niri.pointer_visibility = PointerVisibility::Visible;
                     self.niri.tablet_cursor_location = Some(pos);
                 }
                 ProximityState::Out => {
-                    tool.proximity_out(event.time_msec());
+                    tool.proximity_out(
+                        self,
+                        &ProximityOutEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: event.time_msec(),
+                        },
+                    );
 
                     // Move the mouse pointer here to avoid discontinuity.
                     //
@@ -3832,10 +3866,13 @@ impl State {
             }
 
             tool.button(
-                button,
-                event.button_state(),
-                SERIAL_COUNTER.next_serial(),
-                event.time_msec(),
+                self,
+                &TabletButtonEvent {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    button,
+                    state: event.button_state(),
+                    time: event.time_msec(),
+                },
             );
         }
     }

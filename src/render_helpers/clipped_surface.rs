@@ -1,4 +1,4 @@
-use glam::{Mat3, Vec2};
+use glam::{Mat3, Vec2, Vec3};
 use niri_config::CornerRadius;
 use smithay::backend::renderer::buffer_y_inverted;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -72,9 +72,17 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             Transform::_270 => Transform::_90,
             x => x,
         };
-        let transform_matrix = Mat3::from_translation(Vec2::new(0.5, 0.5))
-            * Mat3::from_cols_array(transform.matrix().as_ref())
-            * Mat3::from_translation(-Vec2::new(0.5, 0.5));
+        let transform_matrix = {
+            let m = transform.matrix();
+            let cols = m.to_cols_array();
+            Mat3::from_translation(Vec2::new(0.5, 0.5))
+                * Mat3::from_cols(
+                    Vec3::new(cols[0], cols[1], 0.0),
+                    Vec3::new(cols[2], cols[3], 0.0),
+                    Vec3::new(cols[4], cols[5], 1.0),
+                )
+                * Mat3::from_translation(-Vec2::new(0.5, 0.5))
+        };
 
         let y_invert = if buffer_y_inverted(self.inner.buffer()).unwrap_or(false) {
             Mat3::from_scale(Vec2::new(1., -1.))

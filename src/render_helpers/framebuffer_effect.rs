@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use glam::{Mat3, Vec2};
+use glam::{Mat3, Vec2, Vec3};
 use niri_config::CornerRadius;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
@@ -109,9 +109,17 @@ impl FramebufferEffectElement {
             Mat3::from_scale(crop_size / clip_size) * Mat3::from_translation(offset / crop_size);
 
         // Revert the effect of the texture transform.
-        let transform_mat = Mat3::from_translation(Vec2::new(0.5, 0.5))
-            * Mat3::from_cols_array(transform.matrix().as_ref())
-            * Mat3::from_translation(Vec2::new(-0.5, -0.5));
+        let transform_mat = {
+            let m = transform.matrix();
+            let cols = m.to_cols_array();
+            Mat3::from_translation(Vec2::new(0.5, 0.5))
+                * Mat3::from_cols(
+                    Vec3::new(cols[0], cols[1], 0.0),
+                    Vec3::new(cols[2], cols[3], 0.0),
+                    Vec3::new(cols[4], cols[5], 1.0),
+                )
+                * Mat3::from_translation(Vec2::new(-0.5, -0.5))
+        };
         let input_to_clip_geo = input_to_clip_geo * transform_mat;
 
         let clip_geo_size = (self.clip_geo.size.w as f32, self.clip_geo.size.h as f32);
